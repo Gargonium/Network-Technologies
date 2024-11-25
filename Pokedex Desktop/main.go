@@ -221,12 +221,11 @@ func updateImgAndStats(pokemon structs.Pokemon, pokeId *int) {
 	img, err := loadImageFromURL(pokemon.Sprites.FrontDefault)
 	if err != nil {
 		setErrorScreen()
-		return
+	} else {
+		*pokeId = pokemon.ID
+		imageBlock.Image = img
+		imageBlock.Refresh()
 	}
-
-	*pokeId = pokemon.ID
-	imageBlock.Image = img
-	imageBlock.Refresh()
 	fillStatBlock(pokemon)
 }
 
