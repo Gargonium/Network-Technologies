@@ -2,42 +2,23 @@ package socks5
 
 import (
 	"fmt"
-	"github.com/lesismal/nbio"
-	"log"
+	"net"
 )
-
-// Client Greeting
-// Server Choice
-// Client Connection request
-// Response packet from server
-
-// SOCKS5 address
 
 func StartServer(portNum int) error {
 
-	engine := nbio.NewEngine(nbio.Config{
-		Network: "tcp",
-		Addrs:   []string{fmt.Sprintf(":%d", portNum)},
-	})
-
-	engine.OnOpen(func(c *nbio.Conn) {
-		log.Printf("Новый клиент подключился: %s\n", c.RemoteAddr().String())
-		HandleClient(c, portNum)
-	})
-
-	engine.OnClose(func(c *nbio.Conn, err error) {
-		c.Close()
-		log.Printf("Close Connection: %s\n", c.RemoteAddr().String())
-	})
-
-	err := engine.Start()
-
+	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", portNum))
 	if err != nil {
-		return fmt.Errorf("Ошибка при запуске сервера: %v\n", err)
+		return fmt.Errorf("Error starting server: %v\n", err)
 	}
-	defer engine.Stop()
 
-	<-make(chan int)
+	fmt.Println("Proxy listening on port ", portNum)
 
-	return nil
+	for {
+		conn, err := listen.Accept()
+		if err != nil {
+			return fmt.Errorf("Accept error: %v\n", err)
+		}
+		go HandleClient(conn, portNum)
+	}
 }

@@ -1,16 +1,20 @@
 package socks5
 
 import (
-	"errors"
 	"fmt"
-	"github.com/lesismal/nbio"
-	"io"
 	"log"
+	"net"
 	"noSOCKS/dns"
-	"time"
 )
 
-func HandleClient(c *nbio.Conn, portNum int) {
+func closeConnection(conn net.Conn) {
+	err := conn.Close()
+	if err != nil {
+		log.Printf("Error closing connection: %v\n", err)
+	}
+}
+
+func HandleClient(c net.Conn, portNum int) {
 
 	buf := make([]byte, 1024)
 
@@ -18,36 +22,47 @@ func HandleClient(c *nbio.Conn, portNum int) {
 	_, err := c.Read(buf)
 	if err != nil {
 		log.Println("Ошибка чтения запроса:", err)
+		closeConnection(c)
 		return
 	}
 
 	if buf[0] != 0x05 {
 		log.Println("Неверная версия SOCKS")
+		closeConnection(c)
 		return
 	}
 
 	// Server Choice
-	c.Write([]byte{0x05, 0x00})
+	_, err = c.Write([]byte{0x05, 0x00})
+	if err != nil {
+		log.Println("Server Choice:", err)
+		closeConnection(c)
+		return
+	}
 
 	// Client Connection request
 	_, err = c.Read(buf[:])
 	if err != nil {
 		log.Println("Ошибка чтения команды:", err)
+		closeConnection(c)
 		return
 	}
 
 	if buf[0] != 0x05 {
 		log.Println("Неверная версия SOCKS")
+		closeConnection(c)
 		return
 	}
 
 	if buf[1] != 0x01 {
 		log.Println("Поддерживается только CONNECT запрос")
+		closeConnection(c)
 		return
 	}
 
 	if buf[2] != 0x00 {
 		log.Println("RSV must be 0x00")
+		closeConnection(c)
 		return
 	}
 
@@ -65,16 +80,12 @@ func HandleClient(c *nbio.Conn, portNum int) {
 		targetAddr, err = dns.ResolveDNSName(domainName)
 		if err != nil {
 			log.Println("Ошибка разрешения DNS:", err)
-			c.Write([]byte{
-				0x05, 0x04, // Код ошибки: Host unreachable
-				0x00, 0x01, // Тип адреса
-				0x00, 0x00, 0x00, 0x00, // Адрес
-				0x00, 0x00, // Порт
-			})
+			closeConnection(c)
 			return
 		}
 	} else {
 		log.Println("Address must be IPv4 or DNS name")
+		closeConnection(c)
 		return
 	}
 
@@ -82,7 +93,7 @@ func HandleClient(c *nbio.Conn, portNum int) {
 	port := []byte{byte(portNum >> 8), byte(portNum & 0xFF)}
 
 	// Response packet from server
-	c.Write([]byte{
+	_, err = c.Write([]byte{
 		0x05,                       // Версия SOCKS5
 		0x00,                       // Статус (спешная аутентификация)
 		0x00,                       // Резерв
@@ -90,47 +101,20 @@ func HandleClient(c *nbio.Conn, portNum int) {
 		ip[0], ip[1], ip[2], ip[3], // Адрес (127.0.0.1)
 		port[0], port[1], // Порт
 	})
+	if err != nil {
+		log.Println("Response packet from server write error:", err)
+		closeConnection(c)
+		return
+	}
 
 	target := fmt.Sprintf("%s:%d", targetAddr, targetPort)
 
-	serverConn, err := nbio.Dial("tcp", target)
+	serverConn, err := net.Dial("tcp", target)
 	if err != nil {
 		log.Println("Error connecting to server:", err)
+		closeConnection(c)
 		return
 	}
 
-	serverEngine := nbio.NewEngine(nbio.Config{})
-	serverEngine.Start()
-
-	_, err = serverEngine.AddConn(serverConn)
-	if err != nil {
-		log.Println("Error adding connection:", err)
-		return
-	}
-
-	defer c.Close()
-	defer serverConn.Close()
-
-	for i := 0; ; i++ {
-		forwardData(c, serverConn)
-		forwardData(serverConn, c)
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func forwardData(src *nbio.Conn, dst *nbio.Conn) {
-	buffer := make([]byte, 4096)
-	n, err := src.Read(buffer)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-		log.Println("Ошибка чтения:", err)
-		return
-	}
-
-	if n > 0 {
-		_, err = dst.Write(buffer[:n])
-		if err != nil {
-			log.Println("Ошибка записи:", err)
-			return
-		}
-	}
+	EstablishConnection(c, serverConn)
 }
