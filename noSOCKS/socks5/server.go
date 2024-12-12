@@ -25,11 +25,6 @@ func StartServer(portNum int) error {
 		HandleClient(c, portNum)
 	})
 
-	engine.OnClose(func(c *nbio.Conn, err error) {
-		c.Close()
-		log.Printf("Close Connection: %s\n", c.RemoteAddr().String())
-	})
-
 	err := engine.Start()
 
 	if err != nil {

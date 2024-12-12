@@ -1,7 +1,6 @@
 package socks5
 
 import (
-	"errors"
 	"fmt"
 	"github.com/lesismal/nbio"
 	"io"
@@ -111,7 +110,7 @@ func HandleClient(c *nbio.Conn, portNum int) {
 	defer c.Close()
 	defer serverConn.Close()
 
-	for i := 0; ; i++ {
+	for {
 		forwardData(c, serverConn)
 		forwardData(serverConn, c)
 		time.Sleep(100 * time.Millisecond)
@@ -119,18 +118,9 @@ func HandleClient(c *nbio.Conn, portNum int) {
 }
 
 func forwardData(src *nbio.Conn, dst *nbio.Conn) {
-	buffer := make([]byte, 4096)
-	n, err := src.Read(buffer)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-		log.Println("Ошибка чтения:", err)
+	_, err := io.Copy(dst, src)
+	if err != nil {
+		log.Println("Error copying data:", err)
 		return
-	}
-
-	if n > 0 {
-		_, err = dst.Write(buffer[:n])
-		if err != nil {
-			log.Println("Ошибка записи:", err)
-			return
-		}
 	}
 }
